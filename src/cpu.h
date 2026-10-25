@@ -25,4 +25,10 @@ void mem_write8 (CPU *cpu, uint32_t addr, uint8_t  value);
 void mem_write16(CPU *cpu, uint32_t addr, uint16_t value);
 void mem_write32(CPU *cpu, uint32_t addr, uint32_t value);
 
+/* cpu_step / cpu_run donus degerleri */
+enum { STEP_OK = 0, STEP_HALT = 1, STEP_ERROR = -1 };
+
+int cpu_step(CPU *cpu);                      /* tek komut calistir */
+int cpu_run(CPU *cpu, uint64_t max_steps);   /* EBREAK'e kadar calistir */
+
 #endif

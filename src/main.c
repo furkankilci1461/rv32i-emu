@@ -1,20 +1,49 @@
 #include <stdio.h>
-#include "decode.h"
+#include "cpu.h"
 
-static void show(uint32_t raw, const char *asm_text) {
-    Instr in = decode(raw);
-    printf("0x%08x  %-20s fmt=%c opcode=0x%02x rd=%-2u f3=%u rs1=%-2u rs2=%-2u f7=0x%02x imm=%d\n",
-           raw, asm_text, instr_format(in.opcode), in.opcode, in.rd,
-           in.funct3, in.rs1, in.rs2, in.funct7, in.imm);
-}
+/* Test programi: her satir bir makine komutu */
+static const uint32_t program[] = {
+    0x00A00093, /* addi x1,  x0, 10      -> x1  = 10          */
+    0x00300113, /* addi x2,  x0, 3       -> x2  = 3           */
+    0x002081B3, /* add  x3,  x1, x2      -> x3  = 13          */
+    0x40208233, /* sub  x4,  x1, x2      -> x4  = 7           */
+    0x00209293, /* slli x5,  x1, 2       -> x5  = 40          */
+    0xFF800313, /* addi x6,  x0, -8      -> x6  = -8          */
+    0x40135393, /* srai x7,  x6, 1       -> x7  = -4          */
+    0x01C35413, /* srli x8,  x6, 28      -> x8  = 15          */
+    0x001324B3, /* slt  x9,  x6, x1      -> x9  = 1 (-8 < 10) */
+    0x00133533, /* sltu x10, x6, x1      -> x10 = 0 (isaretsiz: cok buyuk) */
+    0x0FF0C593, /* xori x11, x1, 0xFF    -> x11 = 245         */
+    0x00100073, /* ebreak                -> dur               */
+};
+
+/* Beklenen sonuclar: {register, deger} */
+static const struct { unsigned reg; int32_t val; } expected[] = {
+    {1, 10}, {2, 3}, {3, 13}, {4, 7}, {5, 40}, {6, -8},
+    {7, -4}, {8, 15}, {9, 1}, {10, 0}, {11, 245},
+};
 
 int main(void) {
-    show(0x02A00293, "addi x5, x0, 42");    /* I: imm=42  */
-    show(0xFFF00093, "addi x1, x0, -1");    /* I: imm=-1  */
-    show(0x00512423, "sw x5, 8(x2)");       /* S: imm=8   */
-    show(0xFE000CE3, "beq x0, x0, -8");     /* B: imm=-8  */
-    show(0x12345537, "lui x10, 0x12345");   /* U: imm=0x12345000 */
-    show(0x010000EF, "jal x1, 16");         /* J: imm=16  */
-    show(0x00B50633, "add x12, x10, x11");  /* R: imm=0   */
-    return 0;
+    CPU cpu;
+    if (cpu_init(&cpu) != 0) return 1;
+
+    /* Programi bellege 0 adresinden itibaren yukle */
+    for (unsigned i = 0; i < sizeof(program) / sizeof(program[0]); i++)
+        mem_write32(&cpu, i * 4, program[i]);
+
+    int result = cpu_run(&cpu, 1000);
+    cpu_dump(&cpu);
+
+    int fails = 0;
+    for (unsigned i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
+        int32_t got = (int32_t)reg_read(&cpu, expected[i].reg);
+        if (got != expected[i].val) {
+            printf("HATA: x%u = %d, beklenen %d\n", expected[i].reg, got, expected[i].val);
+            fails++;
+        }
+    }
+    if (result == STEP_HALT && fails == 0) printf("\nTUM TESTLER GECTI\n");
+
+    cpu_free(&cpu);
+    return fails ? 1 : 0;
 }
