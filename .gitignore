@@ -1,3 +1,6 @@
 rv32i
+test_cpu
 *.dSYM/
 .DS_Store
+programs/*.elf
+programs/*.bin

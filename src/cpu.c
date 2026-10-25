@@ -6,6 +6,8 @@
 int cpu_init(CPU *cpu) {
     memset(cpu->regs, 0, sizeof(cpu->regs));
     cpu->pc = 0;
+    cpu->instret = 0;
+    cpu->exit_code = 0;
     cpu->mem = calloc(MEM_SIZE, 1);
     return cpu->mem ? 0 : -1;
 }

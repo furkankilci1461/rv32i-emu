@@ -2,6 +2,32 @@
 #include "decode.h"
 #include <stdio.h>
 
+/* Sistem cagrilari (Linux numaralari): a7 = numara, a0..a2 = argumanlar */
+enum { SYS_WRITE = 64, SYS_EXIT = 93 };
+
+static int exec_ecall(CPU *cpu) {
+    uint32_t num = reg_read(cpu, 17);      /* a7 */
+    uint32_t a0  = reg_read(cpu, 10);
+    uint32_t a1  = reg_read(cpu, 11);
+    uint32_t a2  = reg_read(cpu, 12);
+
+    switch (num) {
+    case SYS_WRITE: {                       /* write(fd, buf, len) */
+        FILE *out = (a0 == 2) ? stderr : stdout;
+        for (uint32_t i = 0; i < a2; i++)
+            fputc(mem_read8(cpu, a1 + i), out);
+        reg_write(cpu, 10, a2);             /* yazilan bayt sayisi */
+        return STEP_OK;
+    }
+    case SYS_EXIT:                          /* exit(code) */
+        cpu->exit_code = (int32_t)a0;
+        return STEP_HALT;
+    default:
+        fprintf(stderr, "Bilinmeyen sistem cagrisi %u (pc=0x%08x)\n", num, cpu->pc);
+        return STEP_ERROR;
+    }
+}
+
 /* I-tipi aritmetik: ADDI, SLTI, SLTIU, XORI, ORI, ANDI, SLLI, SRLI, SRAI */
 static int exec_op_imm(CPU *cpu, const Instr *in) {
     uint32_t a     = reg_read(cpu, in->rs1);
@@ -133,7 +159,11 @@ int cpu_step(CPU *cpu) {
         break;
     case OP_SYSTEM:
         if (raw == 0x00100073) return STEP_HALT;   /* EBREAK */
-        if (raw == 0x00000073) return STEP_HALT;   /* ECALL (simdilik: dur) */
+        if (raw == 0x00000073) {                    /* ECALL */
+            int s = exec_ecall(cpu);
+            if (s != STEP_OK) return s;
+            break;
+        }
         err = -1;
         break;
     default:
@@ -151,6 +181,7 @@ int cpu_step(CPU *cpu) {
         return STEP_ERROR;
     }
     cpu->pc = next_pc;                         /* 4) PC'yi ilerlet */
+    cpu->instret++;
     return STEP_OK;
 }
 
