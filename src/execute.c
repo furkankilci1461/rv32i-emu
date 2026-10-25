@@ -50,6 +50,56 @@ static int exec_op_reg(CPU *cpu, const Instr *in) {
     return 0;
 }
 
+/* Yukleme: LB, LH, LW, LBU, LHU  ->  rd = mem[rs1 + imm] */
+static int exec_load(CPU *cpu, const Instr *in) {
+    uint32_t addr = reg_read(cpu, in->rs1) + (uint32_t)in->imm;
+    uint32_t r;
+
+    switch (in->funct3) {
+    case 0: r = (uint32_t)(int32_t)(int8_t) mem_read8 (cpu, addr); break; /* LB  (isaretli)   */
+    case 1: r = (uint32_t)(int32_t)(int16_t)mem_read16(cpu, addr); break; /* LH  (isaretli)   */
+    case 2: r = mem_read32(cpu, addr);                             break; /* LW               */
+    case 4: r = mem_read8 (cpu, addr);                             break; /* LBU (isaretsiz)  */
+    case 5: r = mem_read16(cpu, addr);                             break; /* LHU (isaretsiz)  */
+    default: return -1;
+    }
+    reg_write(cpu, in->rd, r);
+    return 0;
+}
+
+/* Saklama: SB, SH, SW  ->  mem[rs1 + imm] = rs2 */
+static int exec_store(CPU *cpu, const Instr *in) {
+    uint32_t addr = reg_read(cpu, in->rs1) + (uint32_t)in->imm;
+    uint32_t v    = reg_read(cpu, in->rs2);
+
+    switch (in->funct3) {
+    case 0: mem_write8 (cpu, addr, (uint8_t)v);  break; /* SB */
+    case 1: mem_write16(cpu, addr, (uint16_t)v); break; /* SH */
+    case 2: mem_write32(cpu, addr, v);           break; /* SW */
+    default: return -1;
+    }
+    return 0;
+}
+
+/* Dallanma: kosul dogruysa pc + imm adresine atla */
+static int exec_branch(CPU *cpu, const Instr *in, uint32_t *next_pc) {
+    uint32_t a = reg_read(cpu, in->rs1);
+    uint32_t b = reg_read(cpu, in->rs2);
+    int take;
+
+    switch (in->funct3) {
+    case 0: take = (a == b);                    break; /* BEQ  */
+    case 1: take = (a != b);                    break; /* BNE  */
+    case 4: take = ((int32_t)a <  (int32_t)b);  break; /* BLT  */
+    case 5: take = ((int32_t)a >= (int32_t)b);  break; /* BGE  */
+    case 6: take = (a <  b);                    break; /* BLTU */
+    case 7: take = (a >= b);                    break; /* BGEU */
+    default: return -1;
+    }
+    if (take) *next_pc = cpu->pc + (uint32_t)in->imm;
+    return 0;
+}
+
 int cpu_step(CPU *cpu) {
     uint32_t raw = mem_read32(cpu, cpu->pc);   /* 1) FETCH  */
     Instr in = decode(raw);                    /* 2) DECODE */
@@ -57,10 +107,33 @@ int cpu_step(CPU *cpu) {
     int err = 0;
 
     switch (in.opcode) {                       /* 3) EXECUTE */
-    case OP_IMM: err = exec_op_imm(cpu, &in); break;
-    case OP_REG: err = exec_op_reg(cpu, &in); break;
+    case OP_IMM:    err = exec_op_imm(cpu, &in);           break;
+    case OP_REG:    err = exec_op_reg(cpu, &in);           break;
+    case OP_LOAD:   err = exec_load(cpu, &in);             break;
+    case OP_STORE:  err = exec_store(cpu, &in);            break;
+    case OP_BRANCH: err = exec_branch(cpu, &in, &next_pc); break;
+
+    case OP_LUI:    /* rd = imm (ust 20 bit) */
+        reg_write(cpu, in.rd, (uint32_t)in.imm);
+        break;
+    case OP_AUIPC:  /* rd = pc + imm (ust 20 bit) */
+        reg_write(cpu, in.rd, cpu->pc + (uint32_t)in.imm);
+        break;
+    case OP_JAL:    /* rd = donus adresi, pc = pc + imm */
+        reg_write(cpu, in.rd, cpu->pc + 4);
+        next_pc = cpu->pc + (uint32_t)in.imm;
+        break;
+    case OP_JALR: { /* hedefi ONCE hesapla: rd == rs1 olabilir */
+        uint32_t target = (reg_read(cpu, in.rs1) + (uint32_t)in.imm) & ~1u;
+        reg_write(cpu, in.rd, cpu->pc + 4);
+        next_pc = target;
+        break;
+    }
+    case OP_FENCE:  /* tek cekirdekli emulatorde bir sey yapmaz */
+        break;
     case OP_SYSTEM:
-        if (raw == 0x00100073) return STEP_HALT;   /* EBREAK: programi durdur */
+        if (raw == 0x00100073) return STEP_HALT;   /* EBREAK */
+        if (raw == 0x00000073) return STEP_HALT;   /* ECALL (simdilik: dur) */
         err = -1;
         break;
     default:
@@ -71,6 +144,10 @@ int cpu_step(CPU *cpu) {
     if (err) {
         fprintf(stderr, "Bilinmeyen/desteklenmeyen komut 0x%08x (pc=0x%08x)\n",
                 raw, cpu->pc);
+        return STEP_ERROR;
+    }
+    if (next_pc & 3) {
+        fprintf(stderr, "Hizasiz atlama hedefi 0x%08x (pc=0x%08x)\n", next_pc, cpu->pc);
         return STEP_ERROR;
     }
     cpu->pc = next_pc;                         /* 4) PC'yi ilerlet */
