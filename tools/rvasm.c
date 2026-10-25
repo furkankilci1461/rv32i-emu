@@ -144,7 +144,7 @@ static void check_range(int32_t v, int32_t lo, int32_t hi, const char *what) {
 
 /* ------------------------------------------------------------------ */
 /* Kodlayicilar: alanlari 32 bitlik komuta yerlestirir                 */
-/* (Adim 3'teki decode'un tam tersi)                                    */
+/* (emulatordeki decode() fonksiyonunun tam tersi)                      */
 /* ------------------------------------------------------------------ */
 static uint32_t enc_r(uint32_t f7, int rs2, int rs1, uint32_t f3, int rd, uint32_t op) {
     return (f7 << 25) | ((uint32_t)rs2 << 20) | ((uint32_t)rs1 << 15) |

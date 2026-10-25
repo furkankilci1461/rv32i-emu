@@ -190,6 +190,6 @@ int cpu_run(CPU *cpu, uint64_t max_steps) {
         int s = cpu_step(cpu);
         if (s != STEP_OK) return s;
     }
-    fprintf(stderr, "Adim siniri asildi (%llu)\n", (unsigned long long)max_steps);
+    fprintf(stderr, "Komut siniri asildi (%llu)\n", (unsigned long long)max_steps);
     return STEP_ERROR;
 }
